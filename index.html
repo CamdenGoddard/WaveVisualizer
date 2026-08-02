@@ -1896,30 +1896,42 @@
     return n ? (sum/n)/255 : 0;
   }
 
- const GRID_SIZE = 60;
-  const GRID_SEGMENTS = 80;
+const GRID_SIZE = 80;
+  const GRID_SEGMENTS = 120; // Increased resolution for smoother waves
 
-  // Create the wireframe plane
+  // Create the solid plane
   const geometry = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE, GRID_SEGMENTS, GRID_SEGMENTS);
   geometry.rotateX(-Math.PI / 2);
 
-  const material = new THREE.MeshBasicMaterial({
+  // Use a material that reacts to light to give it that glossy, physical look
+  const material = new THREE.MeshStandardMaterial({
     color: 0x5fe3ff,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.15,
+    emissive: 0x000000, 
+    metalness: 0.9,     // Highly reflective
+    roughness: 0.15,    // Very smooth, liquid-like
+    wireframe: false,   // Removed the lines!
+    side: THREE.DoubleSide
   });
 
   const gridMesh = new THREE.Mesh(geometry, material);
   scene.add(gridMesh);
 
-  // Add exponential fog to fade out the horizon smoothly into the dark background
-  scene.fog = new THREE.FogExp2(0x05070f, 0.05);
-  renderer.setClearColor(0x05070f, 1);
+  // ==========================================================
+  //  LIGHTING (Crucial for the smooth liquid aesthetic)
+  // ==========================================================
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+  scene.add(ambientLight);
 
-  // Position camera low to the ground to emphasize the "flying over" effect
-  camera.position.set(0, 2.5, 12);
-  camera.lookAt(0, 0, -10);
+  const pointLight = new THREE.PointLight(0xffffff, 2, 50);
+  pointLight.position.set(0, 10, -10);
+  scene.add(pointLight);
+
+  // Dynamic fog to blend the horizon seamlessly
+  scene.fog = new THREE.FogExp2(0x000000, 0.04);
+
+  // Position camera low to emphasize the landscape depth
+  camera.position.set(0, 1.5, 15);
+  camera.lookAt(0, -1, -10);
 
   // ==========================================================
   //  POST-PROCESSING (Bloom / Neon Glow)
@@ -1927,16 +1939,19 @@
   renderPass = new THREE.RenderPass(scene, camera);
   bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 1.5, 0.4, 0.85);
   
-  // Tweak the UnrealBloomPass to match the PS3 aesthetic
-  bloomPass.threshold = 0.0;
-  bloomPass.strength = 1.6;
-  bloomPass.radius = 0.7;
+  // Tweak the bloom to bleed the colors slightly, mimicking the PS3's soft glow
+  bloomPass.threshold = 0.1;
+  bloomPass.strength = 1.2;
+  bloomPass.radius = 1.0;
 
   composer = new THREE.EffectComposer(renderer);
   composer.addPass(renderPass);
   composer.addPass(bloomPass);
 
   const clock = new THREE.Clock();
+
+  // Helper object to smoothly transition background colors
+  const bgColor = new THREE.Color();
 
   // ==========================================================
   //  ANIMATION & REACTIVITY LOOP
@@ -1946,91 +1961,89 @@
     const dt = clock.getDelta();
     t += dt;
 
-    // Grab audio data if we have an active stream
     if (analyser && (!audioEl.paused || inEmbedMode || capturingTabAudio || capturingMicAudio)) {
       analyser.getByteFrequencyData(freqData);
 
-      // Distill the FFT array into specific energy bands
       bassEnergy = getFreqBand(freqData, 0.0, 0.08);
       midEnergy = getFreqBand(freqData, 0.08, 0.4);
       trebleEnergy = getFreqBand(freqData, 0.4, 1.0);
 
-      // Smooth the data to prevent visual jitter
       bassSmooth += (bassEnergy - bassSmooth) * 0.15;
       midSmooth += (midEnergy - midSmooth) * 0.15;
       trebSmooth += (trebleEnergy - trebSmooth) * 0.15;
 
-      // Track a rolling average of the bass for beat detection
       bassAvg = bassAvg * 0.99 + bassEnergy * 0.01;
 
-      // Trigger beat flashes
       if (bassEnergy > bassAvg * 1.35 && t - lastBeatFrame > 0.3) {
         beatFlash = 1.0;
         lastBeatFrame = t;
       }
     } else {
-      // Decay values to zero when music is paused
       bassSmooth *= 0.95;
       midSmooth *= 0.95;
       trebSmooth *= 0.95;
     }
 
-    // Decay the beat flash spike quickly
-    beatFlash = Math.max(0, beatFlash - dt * 1.8);
+    beatFlash = Math.max(0, beatFlash - dt * 1.5);
 
-    // 1. Full-Spectrum Color Drift (PS3 style slow phase)
-    const colorCycle = (t * 0.015) % 1.0; 
-    // Shift color, keep saturation high, and bump lightness on beats
-    material.color.setHSL(colorCycle, 0.8, 0.45 + (beatFlash * 0.25));
+    // 1. Full-Spectrum Color Drift (Exact PS3 color sync)
+    const colorCycle = (t * 0.02) % 1.0; 
     
-    // Pulse the global bloom intensity with the beat
-    bloomPass.strength = 1.3 + (bassSmooth * 2.0) + (beatFlash * 0.8);
+    // The surface material color
+    material.color.setHSL(colorCycle, 0.8, 0.5 + (beatFlash * 0.2));
+    
+    // Tint the light source with the same hue to enhance the reflections
+    pointLight.color.setHSL(colorCycle, 1.0, 0.6);
+    pointLight.intensity = 2 + (bassSmooth * 2.0) + (beatFlash * 1.5);
+
+    // Sync the background and the fog to a darker version of the current color cycle
+    bgColor.setHSL(colorCycle, 0.6, 0.03 + (beatFlash * 0.02));
+    scene.background = bgColor;
+    scene.fog.color.copy(bgColor);
+    
+    bloomPass.strength = 0.8 + (bassSmooth * 1.5) + (beatFlash * 0.6);
 
     // 2. Mesh Displacement (Infinite Scroll + Audio Reactivity)
     const pos = geometry.attributes.position;
-    
-    // Base scroll speed + thrust forward slightly when the bass hits
-    const scrollSpeed = (t * 3.5) + (bassSmooth * 2.0);
+    const scrollSpeed = (t * 4.0) + (bassSmooth * 1.5);
 
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const z = pos.getZ(i);
       
-      // We don't actually move the mesh, we just run a scrolling math 
-      // equation over the static X/Z grid to simulate traveling forward.
       const effectiveZ = z + scrollSpeed;
       
-      // Ambient fluid wave (present even with no audio)
-      let y = Math.sin(x * 0.25 + effectiveZ * 0.2) * 0.6;
-      y += Math.cos(x * 0.4 - effectiveZ * 0.15) * 0.4;
+      // Much smoother ambient wave equations to replace the rigid wireframe feel
+      let y = Math.sin(x * 0.15 + effectiveZ * 0.15) * 1.2;
+      y += Math.cos(x * 0.2 - effectiveZ * 0.1) * 0.8;
 
-      // Audio Displacement
       const distFromCenter = Math.abs(x);
       
-      // Bass pushes the outer edges up into massive canyon walls
-      if (distFromCenter > 2.0) {
-         y += (distFromCenter * 0.15) * bassSmooth * 2.8; 
+      // Bass shapes the outer canyon walls smoothly
+      if (distFromCenter > 4.0) {
+         // Use a smoothstep-like multiplier to blend the flat center into the canyon walls
+         const wallCurve = Math.pow((distFromCenter - 4.0) * 0.2, 1.5);
+         y += wallCurve * bassSmooth * 3.5; 
       }
       
-      // Mids create rolling ripples across the whole mesh
-      const midRipple = Math.sin(effectiveZ * 1.2 + x * 1.5) * midSmooth * 1.8;
+      // Mids and treble create subtle, smooth ripples instead of spikes
+      const midRipple = Math.sin(effectiveZ * 0.8 + x * 1.2) * midSmooth * 1.5;
+      const trebleRipples = Math.cos(effectiveZ * 2.0 - x * 1.5) * trebSmooth * 0.5;
       
-      // Treble introduces fast-moving micro-spikes
-      const trebleSpikes = Math.cos(effectiveZ * 3.5 - x * 2.5) * trebSmooth * 0.8;
-      
-      y += midRipple + trebleSpikes;
+      y += midRipple + trebleRipples;
 
       pos.setY(i, y);
     }
     
-    // Flag the geometry to update in the GPU
     pos.needsUpdate = true;
+    
+    // CRITICAL: We must recompute the normals every frame now that the surface is solid.
+    // This allows the dynamic lighting to cast realistic shadows and highlights on the moving waves.
+    geometry.computeVertexNormals();
 
-    // Render using the composer for the bloom effects, NOT the standard renderer
     composer.render();
   }
 
-  // Initialize canvas size and kick off the loop
   resize();
   render();
 
