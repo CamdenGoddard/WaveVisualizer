@@ -1896,216 +1896,143 @@
     return n ? (sum/n)/255 : 0;
   }
 
-  // ==========================================================
-  //  VISUALIZER — full 3D recreation of the PS3 XMB "Wave" look:
-  //  a glowing wireframe grid landscape flying toward the horizon,
-  //  filling the entire screen, with slow full-spectrum color drift.
-  //  (Built from scratch in Three.js — not Sony's code/assets.)
-  // ==========================================================
+ const GRID_SIZE = 60;
+  const GRID_SEGMENTS = 80;
 
-  const GRID_COLS = 120;   // across
-  const GRID_ROWS = 90;    // receding into the distance
-  const GRID_W = 46;       // world-space width
-  const GRID_D = 130;      // world-space depth
+  // Create the wireframe plane
+  const geometry = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE, GRID_SEGMENTS, GRID_SEGMENTS);
+  geometry.rotateX(-Math.PI / 2);
 
-  const gridGeo = new THREE.PlaneGeometry(GRID_W, GRID_D, GRID_COLS, GRID_ROWS);
-  gridGeo.rotateX(-Math.PI/2);
-  const posAttr = gridGeo.attributes.position;
-  const baseX = new Float32Array(posAttr.count);
-  const baseZ = new Float32Array(posAttr.count);
-  for (let i=0;i<posAttr.count;i++){ baseX[i]=posAttr.getX(i); baseZ[i]=posAttr.getZ(i); }
-  const colorAttr = new THREE.BufferAttribute(new Float32Array(posAttr.count*3), 3);
-  gridGeo.setAttribute('color', colorAttr);
-
-  const gridMat = new THREE.MeshBasicMaterial({
-    vertexColors: true, wireframe: false, transparent: true, opacity: 0.7,
-    side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x5fe3ff,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.15,
   });
-  const gridMesh = new THREE.Mesh(gridGeo, gridMat);
+
+  const gridMesh = new THREE.Mesh(geometry, material);
   scene.add(gridMesh);
 
-  // ---------- floating light motes (treble sparkles) ----------
-  const MOTE_COUNT = 220;
-  const moteGeo = new THREE.BufferGeometry();
-  const motePos = new Float32Array(MOTE_COUNT*3);
-  const moteSeed = new Float32Array(MOTE_COUNT);
-  for (let i=0;i<MOTE_COUNT;i++){
-    motePos[i*3+0] = (Math.random()*2-1) * GRID_W*0.55;
-    motePos[i*3+1] = Math.random()*10;
-    motePos[i*3+2] = -Math.random()*GRID_D*0.95;
-    moteSeed[i] = Math.random()*1000;
-  }
-  moteGeo.setAttribute('position', new THREE.BufferAttribute(motePos,3));
-  function moteTexture(){
-    const c = document.createElement('canvas'); c.width=c.height=64;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(32,32,0,32,32,32);
-    grad.addColorStop(0,'rgba(255,255,255,1)');
-    grad.addColorStop(0.4,'rgba(255,255,255,0.6)');
-    grad.addColorStop(1,'rgba(255,255,255,0)');
-    g.fillStyle = grad; g.fillRect(0,0,64,64);
-    return new THREE.CanvasTexture(c);
-  }
-  const moteMat = new THREE.PointsMaterial({
-    size: 0.55, map: moteTexture(), transparent: true, depthWrite: false,
-    blending: THREE.AdditiveBlending, vertexColors: false
-  });
-  const motes = new THREE.Points(moteGeo, moteMat);
-  scene.add(motes);
+  // Add exponential fog to fade out the horizon smoothly into the dark background
+  scene.fog = new THREE.FogExp2(0x05070f, 0.05);
+  renderer.setClearColor(0x05070f, 1);
 
-  // ---------- camera rig: low, flying just above the grid, filling the whole frame ----------
-  camera.position.set(0, 3.4, 12);
-  camera.lookAt(0, 1.2, -GRID_D*0.5);
+  // Position camera low to the ground to emphasize the "flying over" effect
+  camera.position.set(0, 2.5, 12);
+  camera.lookAt(0, 0, -10);
 
-  // ---------- fog + background matched to current hue so the grid dissolves into the sky ----------
-  scene.fog = new THREE.FogExp2(0x02040c, 0.018);
-
-  // ---------- bloom postprocessing for the authentic glow ----------
+  // ==========================================================
+  //  POST-PROCESSING (Bloom / Neon Glow)
+  // ==========================================================
   renderPass = new THREE.RenderPass(scene, camera);
-  bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.15, 0.85, 0.15);
+  bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 1.5, 0.4, 0.85);
+  
+  // Tweak the UnrealBloomPass to match the PS3 aesthetic
+  bloomPass.threshold = 0.0;
+  bloomPass.strength = 1.6;
+  bloomPass.radius = 0.7;
+
   composer = new THREE.EffectComposer(renderer);
   composer.addPass(renderPass);
   composer.addPass(bloomPass);
 
-  resize();
+  const clock = new THREE.Clock();
 
-  // ---------- ripple sources (traveling rings from beats) ----------
-  let rippleSources = [];
-  function spawnRipple(amp, speed){
-    rippleSources.push({ t0: t, amp, speed: speed || 8 });
-    if (rippleSources.length > 6) rippleSources.shift();
-  }
-  let ambientTimer = 0;
+  // ==========================================================
+  //  ANIMATION & REACTIVITY LOOP
+  // ==========================================================
+  function render() {
+    requestAnimationFrame(render);
+    const dt = clock.getDelta();
+    t += dt;
 
-  function heightAt(px2, pz){
-    // px2: -1..1 across width, pz: 0..1 depth (0 = near camera, 1 = horizon)
-    let h = 0;
-    h += Math.sin(px2*3.0 + pz*2.2 - t*0.020) * 0.5;
-    h += Math.sin(px2*5.4 - pz*3.1 + t*0.013) * 0.24;
-    for (const src of rippleSources){
-      const dist = Math.sqrt(px2*px2 + pz*pz*3.4) * 11;
-      const age = t - src.t0;
-      const frontR = age * (src.speed*0.045);
-      const width = 2.1;
-      const env = Math.exp(-((dist-frontR)*(dist-frontR)) / (2*width*width));
-      h += Math.sin((dist-frontR)*2.3) * env * src.amp * 2.4;
-    }
-    return h;
-  }
-
-  // ---------- slow, full-spectrum color drift (the PS3's signature) ----------
-  let hue = 0.62; // start blue
-
-  const tmpColor = new THREE.Color();
-
-  function updateGrid(){
-    for (let i=0;i<posAttr.count;i++){
-      const bx = baseX[i], bz = baseZ[i];
-      const px2 = bx / (GRID_W/2);                 // -1..1
-      const pz = 1 - ((bz + GRID_D/2) / GRID_D);    // 0 near .. 1 far
-
-      let h = heightAt(px2, pz);
-      if (freqData){
-        const idxF = Math.max(0, Math.min(1, (px2+1)/2));
-        const idx = Math.floor(idxF * freqData.length * 0.55);
-        const amp = (freqData[idx]||0)/255;
-        h += amp * 4.6 * (1 - pz*0.65);
-      }
-      posAttr.setY(i, h);
-
-      // color: base hue cycles slowly; brighten with height & proximity (kept well shy of white)
-      const nearBoost = (1-pz) * 0.18;
-      const peak = Math.max(0, Math.min(1, (h-0.4)/3.2));
-      const l = 0.24 + peak*0.26 + nearBoost*0.06;
-      const s = 0.7 + peak*0.15;
-      tmpColor.setHSL((hue + peak*0.03) % 1, Math.min(0.9,s), Math.min(0.58,l));
-      colorAttr.setXYZ(i, tmpColor.r, tmpColor.g, tmpColor.b);
-    }
-    posAttr.needsUpdate = true;
-    colorAttr.needsUpdate = true;
-    gridGeo.computeVertexNormals();
-  }
-
-  function draw(){
-    requestAnimationFrame(draw);
-    t += 1;
-
-    // ---------- audio sampling ----------
-    let hasAudio = audioCtx && analyser && (capturingTabAudio || capturingMicAudio || !audioEl.paused);
-    if (hasAudio){
+    // Grab audio data if we have an active stream
+    if (analyser && (!audioEl.paused || inEmbedMode || capturingTabAudio || capturingMicAudio)) {
       analyser.getByteFrequencyData(freqData);
-      analyser.getByteTimeDomainData(timeData);
+
+      // Distill the FFT array into specific energy bands
       bassEnergy = getFreqBand(freqData, 0.0, 0.08);
-      midEnergy = getFreqBand(freqData, 0.08, 0.35);
-      trebleEnergy = getFreqBand(freqData, 0.35, 0.9);
-    } else {
-      bassEnergy *= 0.95; midEnergy *= 0.95; trebleEnergy *= 0.95;
-      const ambientBase = inEmbedMode ? 0.09 : 0.05;
-      bassEnergy = Math.max(bassEnergy, ambientBase + Math.sin(t*0.01)*0.03);
-      if (inEmbedMode){
-        midEnergy = Math.max(midEnergy, 0.06 + Math.sin(t*0.017+1)*0.03);
-        trebleEnergy = Math.max(trebleEnergy, 0.04 + Math.sin(t*0.013+2)*0.02);
+      midEnergy = getFreqBand(freqData, 0.08, 0.4);
+      trebleEnergy = getFreqBand(freqData, 0.4, 1.0);
+
+      // Smooth the data to prevent visual jitter
+      bassSmooth += (bassEnergy - bassSmooth) * 0.15;
+      midSmooth += (midEnergy - midSmooth) * 0.15;
+      trebSmooth += (trebleEnergy - trebSmooth) * 0.15;
+
+      // Track a rolling average of the bass for beat detection
+      bassAvg = bassAvg * 0.99 + bassEnergy * 0.01;
+
+      // Trigger beat flashes
+      if (bassEnergy > bassAvg * 1.35 && t - lastBeatFrame > 0.3) {
+        beatFlash = 1.0;
+        lastBeatFrame = t;
       }
-    }
-    bassSmooth += (bassEnergy - bassSmooth) * 0.16;
-    midSmooth  += (midEnergy  - midSmooth ) * 0.16;
-    trebSmooth += (trebleEnergy - trebSmooth) * 0.2;
-
-    // ---------- beat detection drives new ripple rings ----------
-    bassAvg += (bassEnergy - bassAvg) * 0.02;
-    const isBeat = bassEnergy > bassAvg * 1.32 + 0.04 && (t - lastBeatFrame) > 16;
-    if (isBeat){
-      lastBeatFrame = t;
-      beatFlash = 1;
-      spawnRipple(0.9 + bassSmooth*0.9, 10);
-    }
-    beatFlash *= 0.92;
-
-    ambientTimer -= 1;
-    if (ambientTimer <= 0){
-      spawnRipple(0.25 + midSmooth*0.2, 6);
-      ambientTimer = 70 - Math.floor(midSmooth*20);
+    } else {
+      // Decay values to zero when music is paused
+      bassSmooth *= 0.95;
+      midSmooth *= 0.95;
+      trebSmooth *= 0.95;
     }
 
-    // ---------- slow full-spectrum hue drift, nudged (not driven) by the music ----------
-    hue = (hue + 0.00018 + trebSmooth*0.00025) % 1;
+    // Decay the beat flash spike quickly
+    beatFlash = Math.max(0, beatFlash - dt * 1.8);
 
-    // background tracks the wave's current hue, but dimmer/less saturated —
-    // reads as the same color at lower "opacity" against the bright grid
-    tmpColor.setHSL(hue, 0.45, 0.09 + bassSmooth*0.02);
-    renderer.setClearColor(tmpColor, 1);
-    scene.fog.color.copy(tmpColor);
-    bloomPass.strength = 0.85 + bassSmooth*0.55 + beatFlash*0.3;
+    // 1. Full-Spectrum Color Drift (PS3 style slow phase)
+    const colorCycle = (t * 0.015) % 1.0; 
+    // Shift color, keep saturation high, and bump lightness on beats
+    material.color.setHSL(colorCycle, 0.8, 0.45 + (beatFlash * 0.25));
+    
+    // Pulse the global bloom intensity with the beat
+    bloomPass.strength = 1.3 + (bassSmooth * 2.0) + (beatFlash * 0.8);
 
-    updateGrid();
+    // 2. Mesh Displacement (Infinite Scroll + Audio Reactivity)
+    const pos = geometry.attributes.position;
+    
+    // Base scroll speed + thrust forward slightly when the bass hits
+    const scrollSpeed = (t * 3.5) + (bassSmooth * 2.0);
 
-    // ---------- floating motes ----------
-    const mp = motes.geometry.attributes.position;
-    for (let i=0;i<MOTE_COUNT;i++){
-      let y = mp.getY(i) + 0.012 + trebSmooth*0.05;
-      let seed = moteSeed[i];
-      if (y > 11){ y = 0; }
-      mp.setY(i, y);
-      mp.setX(i, mp.getX(i) + Math.sin((t+seed)*0.01)*0.004);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      
+      // We don't actually move the mesh, we just run a scrolling math 
+      // equation over the static X/Z grid to simulate traveling forward.
+      const effectiveZ = z + scrollSpeed;
+      
+      // Ambient fluid wave (present even with no audio)
+      let y = Math.sin(x * 0.25 + effectiveZ * 0.2) * 0.6;
+      y += Math.cos(x * 0.4 - effectiveZ * 0.15) * 0.4;
+
+      // Audio Displacement
+      const distFromCenter = Math.abs(x);
+      
+      // Bass pushes the outer edges up into massive canyon walls
+      if (distFromCenter > 2.0) {
+         y += (distFromCenter * 0.15) * bassSmooth * 2.8; 
+      }
+      
+      // Mids create rolling ripples across the whole mesh
+      const midRipple = Math.sin(effectiveZ * 1.2 + x * 1.5) * midSmooth * 1.8;
+      
+      // Treble introduces fast-moving micro-spikes
+      const trebleSpikes = Math.cos(effectiveZ * 3.5 - x * 2.5) * trebSmooth * 0.8;
+      
+      y += midRipple + trebleSpikes;
+
+      pos.setY(i, y);
     }
-    mp.needsUpdate = true;
-    tmpColor.setHSL((hue+0.05)%1, 0.4, 0.8);
-    moteMat.color = tmpColor.clone();
-    moteMat.opacity = 0.45 + trebSmooth*0.4;
-    moteMat.size = 0.4 + trebSmooth*0.6 + beatFlash*0.3;
+    
+    // Flag the geometry to update in the GPU
+    pos.needsUpdate = true;
 
-    // ---------- gentle camera sway + beat punch, always filling the frame ----------
-    camera.position.x = Math.sin(t*0.0035) * 2.2;
-    camera.position.y = 3.4 + Math.sin(t*0.002) * 0.35 + bassSmooth*0.4;
-    camera.fov = 62 + beatFlash*4;
-    camera.updateProjectionMatrix();
-    camera.lookAt(Math.sin(t*0.0035)*1.2, 1.1, -GRID_D*0.5);
-
+    // Render using the composer for the bloom effects, NOT the standard renderer
     composer.render();
   }
 
-  requestAnimationFrame(draw);
-
+  // Initialize canvas size and kick off the loop
+  resize();
+  render();
 
 })();
 </script>
