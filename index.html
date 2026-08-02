@@ -1949,9 +1949,47 @@ const GRID_SIZE = 80;
   composer.addPass(bloomPass);
 
   const clock = new THREE.Clock();
-
-  // Helper object to smoothly transition background colors
   const bgColor = new THREE.Color();
+
+  // ==========================================================
+  //  SCENE MANAGEMENT & TRANSITIONS
+  // ==========================================================
+  let currentScene = 0;
+  let sceneTimer = 0;
+  const SCENE_DURATION = 15.0; // Change scene every 15 seconds
+
+  // We use these targets to smoothly interpolate (lerp) values during transitions
+  const camPosTarget = new THREE.Vector3(0, 1.5, 15);
+  const lookAtTarget = new THREE.Vector3(0, -1, -10);
+  const currentLookAt = new THREE.Vector3(0, -1, -10);
+  let canyonMultiplierTarget = 1.0;
+  let canyonMultiplier = 1.0;
+  let fogDensityTarget = 0.04;
+
+  function cycleScene() {
+    currentScene = (currentScene + 1) % 3;
+    
+    switch(currentScene) {
+      case 0: // The Canyon Run (Default)
+        camPosTarget.set(0, 1.5, 15);
+        lookAtTarget.set(0, -1, -10);
+        canyonMultiplierTarget = 1.0;
+        fogDensityTarget = 0.04;
+        break;
+      case 1: // Open Ocean (Camera sweeps high, canyon walls flatten)
+        camPosTarget.set(0, 12, 10);
+        lookAtTarget.set(0, 0, -5);
+        canyonMultiplierTarget = 0.0; // Flatten the walls
+        fogDensityTarget = 0.02;      // See further into the distance
+        break;
+      case 2: // Deep Dive (Low camera, intense fog)
+        camPosTarget.set(0, 0.5, 8);
+        lookAtTarget.set(0, 0.5, -15);
+        canyonMultiplierTarget = 0.3; // Slight walls
+        fogDensityTarget = 0.08;      // Thick fog
+        break;
+    }
+  }
 
   // ==========================================================
   //  ANIMATION & REACTIVITY LOOP
@@ -1960,7 +1998,23 @@ const GRID_SIZE = 80;
     requestAnimationFrame(render);
     const dt = clock.getDelta();
     t += dt;
+    sceneTimer += dt;
 
+    // Trigger a scene change when the timer hits the duration
+    if (sceneTimer > SCENE_DURATION) {
+      cycleScene();
+      sceneTimer = 0;
+    }
+
+    // --- SMOOTH CAMERA & STATE TRANSITIONS (Lerping) ---
+    camera.position.lerp(camPosTarget, dt * 0.5);
+    currentLookAt.lerp(lookAtTarget, dt * 0.5);
+    camera.lookAt(currentLookAt);
+    
+    canyonMultiplier += (canyonMultiplierTarget - canyonMultiplier) * (dt * 0.5);
+    scene.fog.density += (fogDensityTarget - scene.fog.density) * (dt * 0.5);
+
+    // --- AUDIO PROCESSING ---
     if (analyser && (!audioEl.paused || inEmbedMode || capturingTabAudio || capturingMicAudio)) {
       analyser.getByteFrequencyData(freqData);
 
@@ -1986,49 +2040,46 @@ const GRID_SIZE = 80;
 
     beatFlash = Math.max(0, beatFlash - dt * 1.5);
 
-    // 1. Full-Spectrum Color Drift (Exact PS3 color sync)
+    // --- COLORS & LIGHTING ---
     const colorCycle = (t * 0.02) % 1.0; 
-    
-    // The surface material color
     material.color.setHSL(colorCycle, 0.8, 0.5 + (beatFlash * 0.2));
     
-    // Tint the light source with the same hue to enhance the reflections
     pointLight.color.setHSL(colorCycle, 1.0, 0.6);
     pointLight.intensity = 2 + (bassSmooth * 2.0) + (beatFlash * 1.5);
-
-    // Sync the background and the fog to a darker version of the current color cycle
-    bgColor.setHSL(colorCycle, 0.6, 0.03 + (beatFlash * 0.02));
+    
+    // In Open Ocean mode, make the background slightly lighter so the horizon pops
+    const bgLightness = currentScene === 1 ? 0.08 : 0.03;
+    bgColor.setHSL(colorCycle, 0.6, bgLightness + (beatFlash * 0.02));
     scene.background = bgColor;
     scene.fog.color.copy(bgColor);
     
     bloomPass.strength = 0.8 + (bassSmooth * 1.5) + (beatFlash * 0.6);
 
-    // 2. Mesh Displacement (Infinite Scroll + Audio Reactivity)
+    // --- GEOMETRY DISPLACEMENT ---
     const pos = geometry.attributes.position;
     const scrollSpeed = (t * 4.0) + (bassSmooth * 1.5);
 
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const z = pos.getZ(i);
-      
       const effectiveZ = z + scrollSpeed;
       
-      // Much smoother ambient wave equations to replace the rigid wireframe feel
       let y = Math.sin(x * 0.15 + effectiveZ * 0.15) * 1.2;
       y += Math.cos(x * 0.2 - effectiveZ * 0.1) * 0.8;
 
       const distFromCenter = Math.abs(x);
       
-      // Bass shapes the outer canyon walls smoothly
+      // The walls are now multiplied by our smooth canyonMultiplier state
       if (distFromCenter > 4.0) {
-         // Use a smoothstep-like multiplier to blend the flat center into the canyon walls
          const wallCurve = Math.pow((distFromCenter - 4.0) * 0.2, 1.5);
-         y += wallCurve * bassSmooth * 3.5; 
+         y += wallCurve * bassSmooth * 3.5 * canyonMultiplier; 
       }
       
-      // Mids and treble create subtle, smooth ripples instead of spikes
+      // In Deep Dive mode (scene 2), increase treble reactivity for a chaotic surface
+      const trebleMultiplier = currentScene === 2 ? 1.5 : 0.5;
+      
       const midRipple = Math.sin(effectiveZ * 0.8 + x * 1.2) * midSmooth * 1.5;
-      const trebleRipples = Math.cos(effectiveZ * 2.0 - x * 1.5) * trebSmooth * 0.5;
+      const trebleRipples = Math.cos(effectiveZ * 2.0 - x * 1.5) * trebSmooth * trebleMultiplier;
       
       y += midRipple + trebleRipples;
 
@@ -2036,18 +2087,10 @@ const GRID_SIZE = 80;
     }
     
     pos.needsUpdate = true;
-    
-    // CRITICAL: We must recompute the normals every frame now that the surface is solid.
-    // This allows the dynamic lighting to cast realistic shadows and highlights on the moving waves.
-    geometry.computeVertexNormals();
+    geometry.computeVertexNormals(); // Keep lighting dynamic over the moving waves
 
     composer.render();
   }
 
   resize();
   render();
-
-})();
-</script>
-</body>
-</html>
