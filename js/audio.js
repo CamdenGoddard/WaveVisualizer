@@ -47,8 +47,6 @@ function connectElement() {
   elementNode.connect(analyser);
 }
 
-// disk instead of reading the whole file into memory, which matters for large
-// videos on phones. For video files only the audio track is decoded.
 export async function playBlob(blob) {
   connectElement();
   await resume();
