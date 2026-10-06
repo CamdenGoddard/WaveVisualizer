@@ -1,6 +1,6 @@
 # Wave
 
-A real-time 3D audio visualizer that runs in the browser. A glossy, rippling surface reacts to the music: bass lifts canyon walls along the sides, mids and treble add ripples, and beats flash the lighting. The camera eases between three scenes every 15 seconds.
+Inspired by the Playstation 3 audio visualizer I built a real-time 3D audio visualizer that runs in the browser. A glossy, rippling surface reacts to the music: bass lifts canyon walls along the sides, mids and treble add ripples, and beats flash the lighting. The camera eases between three scenes every 15 seconds.
 
 **Live:** https://wavevisualizer.com
 
@@ -10,7 +10,7 @@ A real-time 3D audio visualizer that runs in the browser. A glossy, rippling sur
 
 - **Demo track.** An original loop generated in your browser with the Web Audio API, so it works right away with no file and no account.
 - **Your own file.** Open or drag in an audio file (MP3, WAV, M4A, OGG, FLAC…).
-- **Spotify.** Sign in and search for songs to play them in the page with the Web Playback SDK (Spotify Premium required). The SDK doesn't expose the raw audio, so **Sync visuals to audio** shares the tab's sound with the analyser (desktop) or listens through the mic (phones).
+- **Spotify.** Sign in and search for songs to play them in the page with the Web Playback SDK (Spotify Premium is required). The SDK doesn't expose the raw audio, so **Sync visuals to audio** shares the tab's sound with the analyser (desktop) or listens through the mic (phones).
 - **Microphone.** Visualize whatever is playing nearby.
 
 You can also paste lyrics for any track. Plain text shows as a panel; `.lrc` lines like `[00:12.30] first line` highlight in time with the song. Lyrics are stored in your browser only.
