@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wave – a 3D audio visualizer</title>
-<meta name="description" content="A real-time 3D audio visualizer built with Three.js and the Web Audio API. Play the demo, open a file, or connect Spotify.">
+<meta name="description" content="A real-time 3D audio visualizer built with Three.js and the Web Audio API. Play the demo, open an audio file, or connect Spotify.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
@@ -21,7 +21,7 @@
 
   <ul class="actions">
     <li><button id="demoBtn" class="action action-main">Play the demo track</button></li>
-    <li><button id="browseBtn" class="action">Open an audio or video file</button></li>
+    <li><button id="browseBtn" class="action">Open an audio file</button></li>
     <li><button id="spotifyBtn" class="action" aria-controls="spotifySearch">Connect Spotify</button></li>
     <li><button id="micBtn" class="action">Listen through the microphone</button></li>
   </ul>
@@ -33,7 +33,7 @@
   </div>
 
   <p class="fine">You can also drop a file anywhere on this page. Spotify playback needs a Premium account.</p>
-  <input type="file" id="fileInput" accept="audio/*,video/*" hidden>
+  <input type="file" id="fileInput" accept="audio/*" hidden>
 </section>
 
 <div id="dropHint" class="drop-hint" hidden>Drop to play</div>

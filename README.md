@@ -9,7 +9,7 @@ A real-time 3D audio visualizer that runs in the browser. A glossy, rippling sur
 ## Ways to play
 
 - **Demo track.** An original loop generated in your browser with the Web Audio API, so it works right away with no file and no account.
-- **Your own file.** Open or drag in any audio or video file (MP3, WAV, M4A, FLAC, MP4, MOV…). Video files only have their audio decoded.
+- **Your own file.** Open or drag in an audio file (MP3, WAV, M4A, OGG, FLAC…).
 - **Spotify.** Sign in and search for songs to play them in the page with the Web Playback SDK (Spotify Premium required). The SDK doesn't expose the raw audio, so **Sync visuals to audio** shares the tab's sound with the analyser (desktop) or listens through the mic (phones).
 - **Microphone.** Visualize whatever is playing nearby.
 

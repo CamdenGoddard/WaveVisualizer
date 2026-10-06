@@ -111,8 +111,8 @@ async function playBlob(blob, label) {
 
 function playFile(file) {
   if (!file) return;
-  if (!/^(audio|video)\//.test(file.type)) {
-    toast("That isn't an audio or video file. Try MP3, WAV, M4A, MP4 or MOV.");
+  if (!file.type.startsWith("audio/")) {
+    toast("That isn't an audio file. Try MP3, WAV, M4A, OGG or FLAC.");
     return;
   }
   playBlob(file, file.name.replace(/\.[^/.]+$/, ""));
