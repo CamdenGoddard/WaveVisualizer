@@ -4,7 +4,7 @@ Inspired by the Playstation 3 audio visualizer I built a real-time 3D audio visu
 
 **Live:** https://wavevisualizer.com
 
-<!-- Add a short screen recording here: ![Wave visualizer playing the demo track](docs/demo.gif) -->
+![Wave visualizer playing the demo track](docs/demo.gif)
 
 ## Ways to play
 
